@@ -1,75 +1,98 @@
-import streamlit as st
-import pandas as pd
+
+from flask import Flask, request, jsonify, render_template_string
+import sqlite3
 from datetime import datetime
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="GLOBAL WINGS - SISTEMA INTEGRAL", layout="wide")
+app = Flask(__name__)
+DATABASE = "database.db"
 
-# --- INICIALIZACIÓN DE BASES DE DATOS ---
-if 'db_inv' not in st.session_state:
-    # Inventario: Materia Prima
-    st.session_state.db_inv = pd.DataFrame(columns=["Insumo", "Unidad", "Stock", "Costo_Unit_Bs"])
+# -----------------------------
+# BASE DE DATOS
+# -----------------------------
 
-if 'db_recetas' not in st.session_state:
-    # Tabla de Costos Directos: Vincula Combo con Insumos
-    st.session_state.db_recetas = pd.DataFrame(columns=["Combo", "Insumo", "Cantidad_Necesaria"])
+def get_db():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-if 'db_combos' not in st.session_state:
-    # Catálogo de productos a la venta
-    st.session_state.db_combos = pd.DataFrame(columns=["Nombre_Combo", "Precio_Venta_Bs"])
+def init_db():
+    conn = get_db()
+    cursor = conn.cursor()
 
-if 'db_ventas' not in st.session_state:
-    # Registro de ventas realizadas
-    st.session_state.db_ventas = pd.DataFrame(columns=["Fecha", "Combo", "Cantidad", "Total_Venta_Bs", "Costo_Total_Bs", "Utilidad_Bs"])
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS inventario (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT,
+        cantidad REAL,
+        costo_unitario REAL
+    )
+    """)
 
-# --- LOGIN ---
-if "auth" not in st.session_state: st.session_state.auth = False
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS recetas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nombre TEXT
+    )
+    """)
 
-if not st.session_state.auth:
-    st.title("🦅 Acceso Global Wings")
-    u = st.text_input("Usuario")
-    p = st.text_input("Contraseña", type="password")
-    if st.button("Ingresar"):
-        if u == "admin" and p == "wings2026":
-            st.session_state.auth = True
-            st.rerun()
-        else: st.error("Credenciales incorrectas")
-else:
-    menu = st.sidebar.radio("MENÚ", ["📦 Inventario", "👨‍🍳 Recetas y Costos", "💰 Ventas", "📊 Reportes"])
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS receta_ingredientes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        receta_id INTEGER,
+        inventario_id INTEGER,
+        cantidad REAL
+    )
+    """)
 
-    # --- 1. INVENTARIO (ALMACÉN) ---
-    if menu == "📦 Inventario":
-        st.header("📦 Almacén de Materia Prima")
-        
-        with st.expander("➕ Registrar Nuevo Insumo"):
-            with st.form("nuevo_insumo"):
-                n_i = st.text_input("Nombre del Insumo (ej: Pollo)")
-                u_i = st.selectbox("Unidad", ["Kg", "Lt", "Unidad", "Gr"])
-                if st.form_submit_button("Añadir al Almacén"):
-                    nueva_fila = pd.DataFrame([{"Insumo": n_i, "Unidad": u_i, "Stock": 0.0, "Costo_Unit_Bs": 0.0}])
-                    st.session_state.db_inv = pd.concat([st.session_state.db_inv, nueva_fila], ignore_index=True)
-                    st.success(f"{n_i} añadido.")
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS movimientos_financieros (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tipo TEXT,
+        monto REAL,
+        fecha TEXT
+    )
+    """)
 
-        st.subheader("🛒 Cargar Compras (Actualiza Stock y Costos)")
-        if not st.session_state.db_inv.empty:
-            with st.form("compra_stock"):
-                ins_sel = st.selectbox("Seleccionar Insumo", st.session_state.db_inv["Insumo"])
-                cant_compra = st.number_input("Cantidad Comprada", min_value=0.01)
-                costo_total_compra = st.number_input("Monto Total Pagado (Bs)", min_value=0.1)
-                if st.form_submit_button("Registrar Compra"):
-                    idx = st.session_state.db_inv.index[st.session_state.db_inv['Insumo'] == ins_sel][0]
-                    # Actualizar Stock y calcular nuevo costo unitario promedio
-                    st.session_state.db_inv.at[idx, 'Stock'] += cant_compra
-                    st.session_state.db_inv.at[idx, 'Costo_Unit_Bs'] = costo_total_compra / cant_compra
-                    st.success("Inventario y costos actualizados.")
-        
-        st.dataframe(st.session_state.db_inv, use_container_width=True)
+    conn.commit()
+    conn.close()
 
-    # --- 2. RECETAS (COSTOS DIRECTOS) ---
-    elif menu == "👨‍🍳 Recetas y Costos":
-        st.header("👨‍🍳 Ingeniería de Recetas")
-        
-        with st.form("crear_combo"):
-            st.subheader("1. Crear Nuevo Combo")
-            c1, c2 = st.columns(2)
-            n_combo = c1.text_input("Nombre del Combo (ej: Combo 12 Alas)")
+init_db()
+
+# -----------------------------
+# RUTA PRINCIPAL (FRONTEND)
+# -----------------------------
+
+@app.route("/")
+def index():
+    return render_template_string("""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Global Wings ERP</title>
+        <style>
+            body { font-family: Arial; margin: 40px; background:#f4f4f4;}
+            h1 { color:#c0392b; }
+            section { background:white; padding:20px; margin-bottom:20px; border-radius:10px;}
+            button { padding:5px 10px; margin-top:5px;}
+            input { margin:5px; padding:5px;}
+        </style>
+    </head>
+    <body>
+        <h1>GLOBAL WINGS - SISTEMA FINANCIERO (Bs)</h1>
+
+        <section>
+            <h2>Inventario</h2>
+            <input id="nombre" placeholder="Nombre">
+            <input id="cantidad" type="number" placeholder="Cantidad">
+            <input id="costo" type="number" placeholder="Costo Unitario Bs">
+            <button onclick="agregarInventario()">Agregar</button>
+            <ul id="listaInventario"></ul>
+        </section>
+
+        <section>
+            <h2>Crear Receta</h2>
+            <input id="nombreReceta" placeholder="Nombre Receta">
+            <button onclick="crearReceta()">Crear</button>
+        </section>
+
+        <
