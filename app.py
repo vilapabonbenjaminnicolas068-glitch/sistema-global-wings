@@ -44,14 +44,14 @@ else:
         c1.metric("Ventas Totales", f"{v['Total_Bs'].sum():,.2f} Bs")
         val_inv = (st.session_state.db_inv['Stock'] * st.session_state.db_inv['Costo_Unit_Bs']).sum()
         c2.metric("Valor en Inventario", f"{val_inv:,.2f} Bs")
-        c3.metric("Inversión en Activos", f"{st.session_state.db_activos['Monto_Bs'].sum():,.2f} Bs")
-        
-        st.subheader("Historial de Movimientos")
+        c3.metric("Activos Fijos", f"{st.session_state.db_activos['Monto_Bs'].sum():,.2f} Bs")
         st.dataframe(v.tail(10), use_container_width=True)
 
-    # --- 2. ALMACÉN ---
+    # --- 2. ALMACÉN E INSUMOS ---
     elif menu == "🍗 Almacén e Insumos":
-        st.header("📦 Gestión de Materia Prima")
+        st.header("📦 Gestión de Insumos")
         with st.form("f_inv"):
             ni = st.text_input("Nombre del Insumo")
-            un = st.selectbox("Unidad", ["Kg", "Lt
+            un = st.selectbox("Unidad", ["Kg", "Lt", "Unidad", "Gramo"])
+            if st.form_submit_button("Registrar Insumo"):
+                nuevo_i = pd.DataFrame([{"Insumo": ni, "Unidad": un
